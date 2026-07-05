@@ -4,8 +4,6 @@
 
 /**
  * @brief 读取配置文件，返回动态分配的字符串
- *
- * 编译零警告，但 cppcheck 可检测到逻辑问题
  */
 char *read_config(const char *path);
 
@@ -18,28 +16,31 @@ char *read_config(const char *path)
 
     FILE *fp = fopen(path, "r");
     if (fp == NULL) {
-        /* BUG: 这里直接返回 NULL，但 buf 没有被释放 → 内存泄漏 */
+        free(buf);               /* 修复: 释放已分配的内存 */
         return NULL;
     }
 
-    /* BUG: 未检查 fgets 返回值，buf 内容可能未初始化 */
     char *ret = fgets(buf, 256, fp);
-    (void)ret;
     fclose(fp);
+    if (ret == NULL) {
+        free(buf);               /* 修复: fgets 失败时也释放 */
+        return NULL;
+    }
 
     return buf;
 }
 
 /**
  * @brief 复制字符串到堆上
- *
- * BUG: 未检查 src 是否为 NULL，传 NULL 会崩溃
  */
-char *dup_string(const char *src);  /* 前置声明 */
+char *dup_string(const char *src);
 
 char *dup_string(const char *src)
 {
-    size_t len = strlen(src);       /* 如果 src == NULL，这里段错误 */
+    if (src == NULL) {           /* 修复: 空指针检查 */
+        return NULL;
+    }
+    size_t len = strlen(src);
     char *dst = (char *)malloc(len + 1);
     if (dst != NULL) {
         strcpy(dst, src);

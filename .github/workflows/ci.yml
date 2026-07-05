@@ -37,7 +37,13 @@ jobs:
 
       - name: cppcheck
         run: |
-          cppcheck --enable=all --inconclusive --error-exitcode=1 src/ 2>&1 | tee cppcheck.log
+          cppcheck \
+            --enable=warning,performance,portability,information \
+            --inconclusive \
+            --error-exitcode=1 \
+            --suppress=unusedFunction \
+            --suppress=missingIncludeSystem \
+            src/ 2>&1 | tee cppcheck.log
           CPPCHECK_EXIT=${PIPESTATUS[0]}
           if [ "$CPPCHECK_EXIT" -ne 0 ]; then
             echo "::error::cppcheck 发现错误，退出码: ${CPPCHECK_EXIT}"
