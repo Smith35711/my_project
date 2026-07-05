@@ -7,6 +7,11 @@ on:
     branches: [main, master]
   workflow_dispatch:                           # 允许手动触发
 
+permissions:
+  contents: write                              # 创建 Release 需要写权限
+  actions: read
+  checks: write
+
 env:
   CTEST_OUTPUT_ON_FAILURE: 1
 
