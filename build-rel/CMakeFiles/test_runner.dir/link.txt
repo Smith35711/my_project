@@ -1,0 +1,1 @@
+/usr/bin/cc -O3 -DNDEBUG -flto -Wl,-z,relro -Wl,-z,now -fsanitize=address -fsanitize=undefined -fno-sanitize-recover=all CMakeFiles/test_runner.dir/tests/test_main.c.o -o test_runner  libmy_project_lib.a 

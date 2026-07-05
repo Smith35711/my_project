@@ -1,0 +1,1 @@
+/usr/bin/cc -g -fstack-protector-strong -Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack CMakeFiles/my_project.dir/src/main.c.o -o my_project  libmy_project_lib.a 

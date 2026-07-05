@@ -1,0 +1,1 @@
+/usr/bin/cc -O3 -DNDEBUG -flto -Wl,-z,relro -Wl,-z,now CMakeFiles/my_project.dir/src/main.c.o -o my_project  libmy_project_lib.a 

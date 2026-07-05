@@ -23,7 +23,8 @@ char *read_config(const char *path)
     }
 
     /* BUG: 未检查 fgets 返回值，buf 内容可能未初始化 */
-    (void)fgets(buf, 256, fp);
+    char *ret = fgets(buf, 256, fp);
+    (void)ret;
     fclose(fp);
 
     return buf;
