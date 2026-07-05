@@ -1,0 +1,41 @@
+# Build artifacts
+build/
+cmake-build-*/
+out/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Sanitizer logs
+*.asan.log
+*.tsan.log
+*.msan.log
+*.ubsan.log
+
+# Coverage
+*.gcda
+*.gcno
+*.gcov
+coverage.info
+coverage_html/
+
+# Packaging
+dist/
+*.tar.gz
+*.deb
+*.rpm
+
+# Core dumps
+core
+core.*
+
+# Valgrind
+valgrind.log.*
