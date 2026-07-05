@@ -155,22 +155,24 @@ function(add_sanitizer_flags TARGET)
         endif()
     endif()
 
-    # UBSan: 未定义行为（整数溢出、除零、空指针解引用、类型双关等）
+    # UBSan: 未定义行为检测
+    # GCC: -fsanitize=undefined 已包含绝大部分子选项
+    # Clang: 额外补充精细化子选项
     if(ENABLE_UBSAN)
-        list(APPEND SAN_FLAGS -fsanitize=undefined)
-        list(APPEND SAN_FLAGS -fsanitize=integer)
-        list(APPEND SAN_FLAGS -fsanitize=nullability)
-        list(APPEND SAN_FLAGS -fsanitize=alignment)
-        list(APPEND SAN_FLAGS -fsanitize=bool)
-        list(APPEND SAN_FLAGS -fsanitize=bounds)
-        list(APPEND SAN_FLAGS -fsanitize=enum)
-        list(APPEND SAN_FLAGS -fsanitize=float-cast-overflow)
-        list(APPEND SAN_FLAGS -fsanitize=float-divide-by-zero)
-        list(APPEND SAN_FLAGS -fsanitize=nonnull-attribute)
-        list(APPEND SAN_FLAGS -fsanitize=returns-nonnull-attribute)
-        list(APPEND SAN_FLAGS -fsanitize=signed-integer-overflow)
-        list(APPEND SAN_FLAGS -fsanitize=unreachable)
-        list(APPEND SAN_FLAGS -fsanitize=vla-bound)
+        if(IS_CLANG)
+            list(APPEND SAN_FLAGS -fsanitize=undefined)
+            list(APPEND SAN_FLAGS -fsanitize=integer)
+            list(APPEND SAN_FLAGS -fsanitize=nullability)
+            list(APPEND SAN_FLAGS -fsanitize=enum)
+            list(APPEND SAN_FLAGS -fsanitize=float-cast-overflow)
+            list(APPEND SAN_FLAGS -fsanitize=float-divide-by-zero)
+            list(APPEND SAN_FLAGS -fsanitize=signed-integer-overflow)
+        else()
+            # GCC: -fsanitize=undefined 已包含 alignment,bool,bounds,enum,float-divide-by-zero,
+            #       nonnull-attribute,null,return,returns-nonnull-attribute,shift,signed-integer-overflow,
+            #       unreachable,vla-bound,float-cast-overflow 等
+            list(APPEND SAN_FLAGS -fsanitize=undefined)
+        endif()
         list(APPEND SAN_FLAGS -fno-sanitize-recover=all)  # 检测到未定义行为直接 abort
         message(STATUS "[Sanitizer] UndefinedBehaviorSanitizer  ENABLED")
     endif()
@@ -264,15 +266,17 @@ file(GLOB_RECURSE SOURCES src/*.c)
 file(GLOB_RECURSE HEADERS src/*.h)
 
 # ============================================================
+# 核心源码库（编译为静态库，方便主程序和测试复用）
+# ============================================================
+add_library(${PROJECT_NAME}_lib STATIC ${SOURCES} ${HEADERS})
+target_include_directories(${PROJECT_NAME}_lib PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_sanitizer_flags(${PROJECT_NAME}_lib)
+
+# ============================================================
 # 主可执行文件
 # ============================================================
-add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
-
-target_include_directories(${PROJECT_NAME} PRIVATE
-    ${CMAKE_SOURCE_DIR}/src
-)
-
-add_sanitizer_flags(${PROJECT_NAME})
+add_executable(${PROJECT_NAME} src/main.c)
+target_link_libraries(${PROJECT_NAME} PRIVATE ${PROJECT_NAME}_lib)
 
 # ============================================================
 # 测试可执行文件
@@ -286,7 +290,7 @@ if(EXISTS ${CMAKE_SOURCE_DIR}/tests)
             ${CMAKE_SOURCE_DIR}/tests
         )
         target_compile_definitions(test_runner PRIVATE TESTING)
-        target_link_libraries(test_runner PRIVATE ${PROJECT_NAME})
+        target_link_libraries(test_runner PRIVATE ${PROJECT_NAME}_lib)
         add_sanitizer_flags(test_runner)
         add_test(NAME all_tests COMMAND test_runner)
     endif()
