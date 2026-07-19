@@ -1,0 +1,1211 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>双端通信框架示意图</title>
+<style>
+/* ========== CSS Variables ========== */
+:root {
+  --bg: #f0f4f8;
+  --card-bg: #ffffff;
+  --text: #1a202c;
+  --text-secondary: #64748b;
+  --border: #e2e8f0;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.08), 0 2px 4px rgba(0,0,0,.04);
+  --font-mono: 'SF Mono','Cascadia Code','Consolas','Monaco',monospace;
+  --font-sans: 'Inter','Segoe UI',system-ui,-apple-system,sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font-sans);background:var(--bg);color:var(--text);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+/* Header */
+.header{background:var(--card-bg);border-bottom:1px solid var(--border);padding:14px 32px;display:flex;align-items:center;justify-content:space-between;box-shadow:var(--shadow-sm);z-index:10}
+.header-left{display:flex;align-items:center;gap:12px}
+.header-icon{width:36px;height:36px;border-radius:var(--radius-sm);background:linear-gradient(135deg,#3b82f6,#8b5cf6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;font-weight:700}
+.header h1{font-size:18px;font-weight:700;letter-spacing:-.3px}
+.header-subtitle{font-size:12px;color:var(--text-secondary);margin-top:1px}
+.header-actions{display:flex;gap:8px}
+
+/* Mode selector */
+.mode-selector{display:flex;gap:0;background:#f1f5f9;border-radius:8px;padding:3px;border:1px solid var(--border)}
+.mode-btn{display:flex;align-items:center;gap:4px;padding:6px 12px;border:none;background:transparent;color:var(--text-secondary);font-size:12px;font-weight:500;cursor:pointer;border-radius:6px;transition:all .2s;font-family:var(--font-sans);white-space:nowrap}
+.mode-btn:hover{color:var(--text);background:rgba(255,255,255,.6)}
+.mode-btn.active{background:#fff;color:#1e293b;font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+.mode-btn .mode-icon{font-size:14px}
+
+.btn{padding:7px 15px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--card-bg);color:var(--text);font-size:13px;font-weight:500;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:5px;font-family:var(--font-sans)}
+.btn:hover{background:#f8fafc;border-color:#cbd5e1}
+.btn-primary{background:#3b82f6;color:#fff;border-color:#3b82f6}
+.btn-primary:hover{background:#2563eb;border-color:#2563eb}
+
+/* Main */
+.main{display:flex;flex:1;min-height:0;overflow:hidden}
+.diagram-area{flex:1;padding:16px;min-width:0;min-height:0;overflow:auto;position:relative}
+.diagram-area svg{width:100%;height:100%;display:block}
+.zoom-indicator{position:absolute;bottom:12px;right:16px;background:rgba(30,41,59,.82);color:#fff;padding:4px 10px;border-radius:5px;font-size:12px;font-weight:600;pointer-events:none;opacity:0;transition:opacity .3s;z-index:5;font-family:var(--font-mono)}
+.zoom-indicator.visible{opacity:1}
+
+/* ===== SVG Interaction & Highlight System ===== */
+/*
+ * Three-tier highlight system:
+ * 1. Direct hover: CSS :hover rules for immediate visual feedback
+ * 2. Cross-highlight: JS adds .highlight class to related elements
+ * 3. Tooltip: floating label showing connection details
+ *
+ * Why CSS + JS: CSS handles the single-element hover style; JS handles
+ * cross-element coordination (hover thread → highlight its connection
+ * line + the partner thread on the other side, and vice versa).
+ */
+.conn-group{cursor:pointer}
+.conn-group:hover .conn-line{stroke-width:3.2 !important;filter:brightness(1.2)}
+.conn-group:hover .conn-dot{r:7.5;filter:url(#glow)}
+
+/* Thread box states */
+.thread-rect{transition: stroke .2s, filter .2s, stroke-width .2s;cursor:pointer}
+.thread-rect:hover{stroke-width:2.8;filter:url(#threadGlow)}
+.thread-rect.highlight{stroke-width:3;filter:url(#threadGlow)}
+
+/* Connection dot states */
+.conn-dot{transition: r .2s, filter .2s}
+.conn-dot.highlight{r:7.5;filter:url(#glow)}
+
+/* Connection line highlight (applied via JS cross-highlight) */
+.conn-line.highlight{stroke-width:3.2 !important;filter:brightness(1.2)}
+.conn-glow.highlight{opacity:0.25 !important}
+
+/* Sidebar */
+.config-sidebar{width:340px;min-width:0;background:var(--card-bg);border-left:1px solid var(--border);overflow-y:auto;padding:18px;display:flex;flex-direction:column;gap:14px;box-shadow:var(--shadow-md);z-index:5;transition:width .3s ease,padding .3s ease,opacity .3s ease}
+.config-sidebar.collapsed{width:0;padding:18px 0;overflow:hidden;opacity:0;pointer-events:none;border-left:none}
+.config-sidebar::-webkit-scrollbar{width:5px}
+.config-sidebar::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
+.config-section{background:#f8fafc;border-radius:var(--radius-md);padding:15px;border:1px solid var(--border)}
+.config-section-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-secondary);margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.config-section-title::before{content:'';width:3px;height:15px;border-radius:2px}
+.config-section.left .config-section-title::before{background:#3b82f6}
+.config-section.right .config-section-title::before{background:#8b5cf6}
+.config-section.conns .config-section-title::before{background:#f59e0b}
+.config-section.layout .config-section-title::before{background:#64748b}
+
+.form-group{margin-bottom:9px}.form-group:last-child{margin-bottom:0}
+.form-label{display:block;font-size:10px;font-weight:600;color:var(--text-secondary);margin-bottom:3px;text-transform:uppercase;letter-spacing:.3px}
+.form-input{width:100%;padding:6px 9px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;font-family:var(--font-sans);background:#fff;color:var(--text);transition:border-color .15s}
+.form-input:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.1)}
+.form-row{display:flex;gap:8px;align-items:center}.form-row .form-group{flex:1;margin-bottom:0}
+
+.proc-block{background:#fff;border-radius:var(--radius-sm);padding:11px;margin-bottom:8px;border:1px solid var(--border)}
+.proc-block:last-child{margin-bottom:0}
+.proc-header{font-size:12px;font-weight:700;margin-bottom:7px;display:flex;align-items:center;justify-content:space-between}
+.proc-header .dot-indicator{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:5px}
+.proc-header.left .dot-indicator{background:#3b82f6}
+.proc-header.right .dot-indicator{background:#8b5cf6}
+.thread-inputs{display:flex;flex-direction:column;gap:5px}
+.thread-inputs .form-input{font-size:11px;padding:5px 8px}
+
+.btn-sm{padding:3px 9px;font-size:10px;border-radius:4px;border:1px solid var(--border);background:#fff;cursor:pointer;font-family:var(--font-sans);transition:all .15s}
+.btn-sm:hover{background:#f1f5f9}
+.btn-sm.danger{color:#ef4444;border-color:#fecaca}.btn-sm.danger:hover{background:#fef2f2}
+.btn-sm.add{color:#3b82f6;border-color:#bfdbfe}.btn-sm.add:hover{background:#eff6ff}
+
+.conn-table{width:100%;border-collapse:collapse;font-size:11px}
+.conn-table th{text-align:left;font-weight:600;color:var(--text-secondary);padding:5px 7px;border-bottom:2px solid var(--border);font-size:10px;text-transform:uppercase;letter-spacing:.3px}
+.conn-table td{padding:4px 7px;border-bottom:1px solid var(--border)}
+.conn-table select{width:100%;padding:3px 5px;border:1px solid var(--border);border-radius:4px;font-size:11px;background:#fff;font-family:var(--font-sans)}
+.conn-table select.dir-select{font-size:11px;padding:3px 3px;text-align:center}
+
+.range-row{display:flex;align-items:center;gap:8px}
+.range-row input[type="range"]{flex:1}
+.range-val{font-size:11px;color:var(--text-secondary);min-width:30px;text-align:right;font-family:var(--font-mono)}
+
+input[type="color"]{width:100%;height:30px;border:1px solid var(--border);border-radius:var(--radius-sm);cursor:pointer;padding:2px}
+
+.tooltip{position:fixed;pointer-events:none;background:#1e293b;color:#fff;padding:7px 14px;border-radius:7px;font-size:12px;font-family:var(--font-sans);opacity:0;transition:opacity .15s;z-index:100;box-shadow:0 4px 16px rgba(0,0,0,.35);line-height:1.5}
+.tooltip strong{color:#fbbf24;font-family:var(--font-mono);font-size:11px}
+.tooltip small{color:#94a3b8;font-size:10px}
+.tooltip.visible{opacity:1}
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-left">
+    <div class="header-icon">⇄</div>
+    <div>
+      <h1>双端通信框架示意图</h1>
+      <div class="header-subtitle" id="headerSubtitle">Inter-Process Communication Topology · Bidirectional IPC</div>
+    </div>
+  </div>
+  <!-- 通信模式选择器 -->
+  <div class="mode-selector" id="modeSelector">
+    <button class="mode-btn active" data-mode="mode1" title="交叉通信：m×n ↔ n×m，交错映射">
+      <span class="mode-icon">🔀</span><span>交叉通信</span>
+    </button>
+    <button class="mode-btn" data-mode="mode2" title="一一对应：m×m ↔ m×m，同索引直连">
+      <span class="mode-icon">🔗</span><span>一一对应</span>
+    </button>
+    <button class="mode-btn" data-mode="mode3" title="转发通信：链式路由 A1→B1→A2→B2→A3">
+      <span class="mode-icon">⛓️</span><span>转发通信</span>
+    </button>
+    <button class="mode-btn" data-mode="mode4" title="内部通信：单程序内子进程互相通信">
+      <span class="mode-icon">🔄</span><span>内部通信</span>
+    </button>
+  </div>
+  <div class="header-actions">
+    <button class="btn" id="btnToggleSidebar" onclick="toggleSidebar()" title="显示/隐藏配置面板">◀ 配置</button>
+    <button class="btn" onclick="exportConfig()">📋 导出</button>
+    <button class="btn" onclick="resetConfig()">↺ 重置</button>
+    <button class="btn btn-primary" onclick="renderAll()">✓ 应用</button>
+  </div>
+</header>
+
+<main class="main">
+  <div class="diagram-area" id="diagramArea">
+    <div class="zoom-indicator" id="zoomIndicator">100%</div>
+    <svg id="diagramSvg" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid meet"></svg>
+  </div>
+  <aside class="config-sidebar" id="configSidebar"></aside>
+</main>
+
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+// ==================== DEFAULT CONFIGURATION ====================
+const DEFAULT_CONFIG = {
+  title: '双端通信框架',
+  spacing: {
+    processWidth: 200,       // width of each process box
+    sideGap: 280,            // horizontal gap between the two container inner edges
+    containerPadX: 20,       // horizontal padding inside outer container
+    containerPadY: 22,       // vertical padding inside outer container
+    processPadX: 14,         // horizontal padding inside process box (thread width = processWidth - 2*padX)
+    processPadTop: 8,        // top padding inside process box (below header)
+    processPadBottom: 12,    // bottom padding inside process box
+    processGap: 16,          // vertical gap between processes
+    threadGap: 6,            // vertical gap between threads within a process
+    threadHeight: 40,
+    processHeaderHeight: 28,
+  },
+  colors: {
+    leftAccent: '#8b5cf6',        // 紫色系 = 服务端
+    leftThreadBg: '#ede9fe',
+    leftThreadBorder: '#c4b5fd',
+    leftProcessBorder: '#a78bfa',
+    leftContainerBorder: '#94a3b8',
+    rightAccent: '#3b82f6',       // 蓝色系 = 客户端
+    rightThreadBg: '#dbeafe',
+    rightThreadBorder: '#93c5fd',
+    rightProcessBorder: '#60a5fa',
+    rightContainerBorder: '#94a3b8',
+    dotColor: '#f59e0b',
+    arrowColor: '#94a3b8',
+  },
+  // 左侧 = 服务端（2进程 × 每进程3线程）
+  left: {
+    label: '服务端 Server',
+    processes: [
+      { name: 'Server Process X', threads: ['Thread X-1', 'Thread X-2', 'Thread X-3'] },
+      { name: 'Server Process Y', threads: ['Thread Y-1', 'Thread Y-2', 'Thread Y-3'] }
+    ]
+  },
+  // 右侧 = 客户端（3进程 × 每进程2线程）
+  right: {
+    label: '客户端 Client',
+    processes: [
+      { name: 'Client Process A', threads: ['Thread A-1', 'Thread A-2'] },
+      { name: 'Client Process B', threads: ['Thread B-1', 'Thread B-2'] },
+      { name: 'Client Process C', threads: ['Thread C-1', 'Thread C-2'] }
+    ]
+  },
+  // 连接映射：[左进程,左线程, 右进程,右线程]
+  // 左6线程(2proc×3) ↔ 右6线程(3proc×2)，交错：左第i线连右第i线，右进程轮转
+  connections: [
+    [0,0, 0,0, 'both'],
+    [0,1, 1,0, 'both'],
+    [0,2, 2,0, 'both'],
+    [1,0, 0,1, 'both'],
+    [1,1, 1,1, 'both'],
+    [1,2, 2,1, 'both'],
+  ]
+};
+
+let config = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+let currentMode = 'mode1';
+
+// ==================== 4 种通信模式预设 ====================
+/*
+ * 每个模式对应一种典型的 IPC 通信拓扑。
+ * 切换模式时完整替换 left/right/connections/title/spacing，
+ * colors 保持不变以维持视觉一致性。
+ */
+const MODE_PRESETS = {
+
+  // 模式1：交叉通信 m×n ↔ n×m（当前默认）
+  mode1: {
+    title: '交叉通信 · Cross IPC',
+    description: 'm×n ↔ n×m · 交错映射',
+    spacing: { processWidth: 200, sideGap: 280, containerPadX: 20, containerPadY: 22,
+               processPadX: 14, processPadTop: 8, processPadBottom: 12,
+               processGap: 16, threadGap: 6, threadHeight: 40, processHeaderHeight: 28 },
+    left: { label: '服务端 Server', processes: [
+      { name: 'Server Process X', threads: ['Thread X-1','Thread X-2','Thread X-3'] },
+      { name: 'Server Process Y', threads: ['Thread Y-1','Thread Y-2','Thread Y-3'] }
+    ]},
+    right: { label: '客户端 Client', processes: [
+      { name: 'Client Process A', threads: ['Thread A-1','Thread A-2'] },
+      { name: 'Client Process B', threads: ['Thread B-1','Thread B-2'] },
+      { name: 'Client Process C', threads: ['Thread C-1','Thread C-2'] }
+    ]},
+    connections: [[0,0,0,0,'both'],[0,1,1,0,'both'],[0,2,2,0,'both'],[1,0,0,1,'both'],[1,1,1,1,'both'],[1,2,2,1,'both']]
+  },
+
+  // 模式2：一一对应 m×m ↔ m×m
+  mode2: {
+    title: '一一对应 · Direct IPC',
+    description: 'm×m ↔ m×m · 直连映射',
+    spacing: { processWidth: 200, sideGap: 300, containerPadX: 20, containerPadY: 22,
+               processPadX: 14, processPadTop: 8, processPadBottom: 12,
+               processGap: 16, threadGap: 6, threadHeight: 40, processHeaderHeight: 28 },
+    left: { label: '服务端 Server', processes: [
+      { name: 'Server Process X', threads: ['Thread X-1','Thread X-2'] },
+      { name: 'Server Process Y', threads: ['Thread Y-1','Thread Y-2'] }
+    ]},
+    right: { label: '客户端 Client', processes: [
+      { name: 'Client Process A', threads: ['Thread A-1','Thread A-2'] },
+      { name: 'Client Process B', threads: ['Thread B-1','Thread B-2'] }
+    ]},
+    // 同索引一线一连：L(Pi,Tj)↔R(Pi,Tj)
+    connections: [[0,0,0,0,'both'],[0,1,0,1,'both'],[1,0,1,0,'both'],[1,1,1,1,'both']]
+  },
+
+  // 模式3：转发通信 · 链式路由 A1→B1→A2→B2→A3
+  mode3: {
+    title: '转发通信 · Relay IPC',
+    description: '链式路由 · A1→B1→A2→B2→A3',
+    spacing: { processWidth: 200, sideGap: 300, containerPadX: 20, containerPadY: 22,
+               processPadX: 14, processPadTop: 8, processPadBottom: 12,
+               processGap: 16, threadGap: 6, threadHeight: 40, processHeaderHeight: 28 },
+    left: { label: '节点组 A', processes: [
+      { name: 'Node A1', threads: ['Handler'] },
+      { name: 'Node A2', threads: ['Handler'] },
+      { name: 'Node A3', threads: ['Handler'] }
+    ]},
+    right: { label: '节点组 B', processes: [
+      { name: 'Node B1', threads: ['Forwarder'] },
+      { name: 'Node B2', threads: ['Forwarder'] }
+    ]},
+    // 链: A1↔B1, B1↔A2, A2↔B2, B2↔A3
+    connections: [[0,0,0,0,'both'],[1,0,0,0,'both'],[1,0,1,0,'both'],[2,0,1,0,'both']]
+  },
+
+  // 模式4：内部进程通信 · 单程序内子进程互相通信
+  mode4: {
+    title: '内部通信 · Internal IPC',
+    description: '单程序内子进程间通信',
+    outerFrame: { label: 'Application 应用程序进程', color: '#10b981' },
+    spacing: { processWidth: 200, sideGap: 260, containerPadX: 20, containerPadY: 22,
+               processPadX: 14, processPadTop: 8, processPadBottom: 12,
+               processGap: 16, threadGap: 6, threadHeight: 40, processHeaderHeight: 28 },
+    left: { label: '子进程组 A', processes: [
+      { name: 'SubProcess A1', threads: ['IPC Channel 1', 'IPC Channel 2'] },
+      { name: 'SubProcess A2', threads: ['Worker Thread'] }
+    ]},
+    right: { label: '子进程组 B', processes: [
+      { name: 'SubProcess B1', threads: ['IPC Channel 1', 'IPC Channel 2'] },
+      { name: 'SubProcess B2', threads: ['Worker Thread'] }
+    ]},
+    // 5条内部IPC通道：子进程间线程互相通信
+    connections: [
+      [0,0, 0,0, 'both'],  // A1.Ch1 ↔ B1.Ch1  主通道对
+      [0,1, 0,1, 'both'],  // A1.Ch2 ↔ B1.Ch2  辅助通道对
+      [1,0, 1,0, 'both'],  // A2.Worker ↔ B2.Worker  工作线程对
+      [0,0, 0,1, 'lr'],    // A1.Ch1 → B1.Ch2  跨通道路由
+      [0,1, 1,0, 'rl'],    // B2.Worker → A1.Ch2  工作线程回调
+    ]
+  }
+};
+
+// ==================== MODE SWITCHING ====================
+/*
+ * 切换通信模式时，从 MODE_PRESETS 加载对应的进程/线程/连接配置。
+ * 保留当前的 colors 和 spacing 设置（除非 preset 显式覆盖 spacing）。
+ * 这样用户在自定义颜色后切换模式不会丢失配色。
+ */
+function switchMode(modeKey) {
+  const preset = MODE_PRESETS[modeKey];
+  if (!preset) return;
+
+  currentMode = modeKey;
+
+  // 应用 preset 的 title / left / right / connections
+  config.title = preset.title;
+  config.left = JSON.parse(JSON.stringify(preset.left));
+  config.right = JSON.parse(JSON.stringify(preset.right));
+  config.connections = JSON.parse(JSON.stringify(preset.connections));
+  config.outerFrame = preset.outerFrame ? {...preset.outerFrame} : undefined;
+
+  // spacing：preset 可以覆盖（不同模式布局需求不同）
+  if (preset.spacing) {
+    config.spacing = { ...config.spacing, ...preset.spacing };
+  }
+
+  // 更新副标题
+  document.getElementById('headerSubtitle').textContent =
+    preset.description + ' · Bidirectional IPC';
+
+  // 更新按钮激活态
+  document.querySelectorAll('.mode-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.mode === modeKey);
+  });
+
+  renderAll();
+}
+
+// ==================== COMPUTE LAYOUT ====================
+function computeLayout(cfg) {
+  const S = cfg.spacing;
+  const PW = S.processWidth;            // process box width
+  const TW = PW - S.processPadX * 2;    // thread width (full process content width)
+  const TH = S.threadHeight;
+  const HH = S.processHeaderHeight;
+
+  // --- Helper: compute process height from thread count ---
+  function procHeight(threadCount) {
+    return HH + S.processPadTop + threadCount * TH + (threadCount - 1) * S.threadGap + S.processPadBottom;
+  }
+
+  // --- Left side ---
+  const leftProcs = cfg.left.processes;
+  const leftProcHeights = leftProcs.map(p => procHeight(p.threads.length));
+  const leftTotalProcH = leftProcHeights.reduce((a,b)=>a+b,0);
+  const leftTotalH = leftTotalProcH + (leftProcs.length - 1) * S.processGap;
+  const leftContainerW = PW + S.containerPadX * 2;
+  const leftContainerH = leftTotalH + S.containerPadY * 2;
+  const leftContainerX = 40;
+  const leftContainerY = 400 - leftContainerH / 2;
+  const leftProcX0 = leftContainerX + S.containerPadX;
+
+  // --- Right side ---
+  const rightProcs = cfg.right.processes;
+  const rightProcHeights = rightProcs.map(p => procHeight(p.threads.length));
+  const rightTotalProcH = rightProcHeights.reduce((a,b)=>a+b,0);
+  const rightTotalH = rightTotalProcH + (rightProcs.length - 1) * S.processGap;
+  const rightContainerW = PW + S.containerPadX * 2;
+  const rightContainerH = rightTotalH + S.containerPadY * 2;
+  const rightContainerX = leftContainerX + leftContainerW + S.sideGap;
+  const rightContainerY = 400 - rightContainerH / 2;
+  const rightProcX0 = rightContainerX + S.containerPadX;
+
+  // --- Cumulative Y offsets for processes ---
+  function procYOff(side, procIdx) {
+    const procs = side === 'left' ? leftProcs : rightProcs;
+    const heights = side === 'left' ? leftProcHeights : rightProcHeights;
+    const cy = side === 'left' ? leftContainerY : rightContainerY;
+    let y = cy + S.containerPadY;
+    for (let i = 0; i < procIdx; i++) y += heights[i] + S.processGap;
+    return y;
+  }
+
+  // --- Thread position ---
+  function getThreadPos(side, procIdx, threadIdx) {
+    const px = side === 'left' ? leftProcX0 : rightProcX0;
+    const py = procYOff(side, procIdx) + HH + S.processPadTop + threadIdx * (TH + S.threadGap);
+    return { x: px + S.processPadX, y: py, w: TW, h: TH, procX: px };
+  }
+
+  // --- Dot position (on the inner-facing edge of the thread box) ---
+  function getDotPos(side, procIdx, threadIdx) {
+    const t = getThreadPos(side, procIdx, threadIdx);
+    const r = 5;
+    if (side === 'left') {
+      return { x: t.x + t.w, y: t.y + t.h / 2, r };
+    } else {
+      return { x: t.x, y: t.y + t.h / 2, r };
+    }
+  }
+
+  // --- Process box ---
+  function getProcBox(side, procIdx) {
+    const heights = side === 'left' ? leftProcHeights : rightProcHeights;
+    const px = side === 'left' ? leftProcX0 : rightProcX0;
+    const py = procYOff(side, procIdx);
+    return { x: px, y: py, w: PW, h: heights[procIdx] };
+  }
+
+  return {
+    leftContainer:  { x: leftContainerX,  y: leftContainerY,  w: leftContainerW,  h: leftContainerH },
+    rightContainer: { x: rightContainerX, y: rightContainerY, w: rightContainerW, h: rightContainerH },
+    procWidth: PW, threadWidth: TW, threadHeight: TH,
+    getThreadPos, getDotPos, getProcBox,
+  };
+}
+
+// ==================== RENDER SVG ====================
+function renderDiagram(cfg) {
+  const svg = document.getElementById('diagramSvg');
+  const L = computeLayout(cfg);
+  const C = cfg.colors;
+  const S = cfg.spacing;
+
+  // --- SVG defs ---
+  const defs = `
+    <defs>
+      <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+        <feGaussianBlur stdDeviation="3.5" result="blur"/>
+        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+      <filter id="threadGlow" x="-30%" y="-30%" width="160%" height="160%">
+        <feGaussianBlur stdDeviation="2.5" result="blur"/>
+        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+      <filter id="boxShadow" x="-8%" y="-8%" width="120%" height="120%">
+        <feDropShadow dx="0" dy="1.5" stdDeviation="2.5" flood-opacity="0.07"/>
+      </filter>
+      <filter id="boxShadowStrong" x="-10%" y="-10%" width="130%" height="130%">
+        <feDropShadow dx="0" dy="3" stdDeviation="5" flood-opacity="0.18"/>
+      </filter>
+      <marker id="arrowEnd" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+        <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="${C.leftAccent}"/>
+      </marker>
+      <marker id="arrowStart" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+        <path d="M 10 1.5 L 1 5 L 10 8.5 z" fill="${C.rightAccent}"/>
+      </marker>
+      <linearGradient id="arrowGrad" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0%" stop-color="${C.leftAccent}" stop-opacity="0.75"/>
+        <stop offset="50%" stop-color="${C.dotColor}" stop-opacity="0.55"/>
+        <stop offset="100%" stop-color="${C.rightAccent}" stop-opacity="0.75"/>
+      </linearGradient>
+    </defs>`;
+
+  // --- Subtle dot-grid background ---
+  let bg = '';
+  for (let gx = 0; gx <= 1200; gx += 30) {
+    for (let gy = 0; gy <= 800; gy += 30) {
+      bg += `<circle cx="${gx}" cy="${gy}" r="0.8" fill="#cbd5e1" opacity="0.5"/>`;
+    }
+  }
+
+  // --- Connection data (dir: 'both'|'lr'|'rl', defaults to 'both' for legacy) ---
+  const connData = cfg.connections.map((c) => ({
+    lpi: c[0], lti: c[1], rpi: c[2], rti: c[3],
+    dir: c[4] || 'both',
+    leftDot: L.getDotPos('left', c[0], c[1]),
+    rightDot: L.getDotPos('right', c[2], c[3]),
+  }));
+
+  // --- Connection arrows (drawn on top of boxes for full visibility) ---
+  let connSvg = '';
+  connData.forEach((cd, idx) => {
+    const x1 = cd.leftDot.x;
+    const y1 = cd.leftDot.y;
+    const x2 = cd.rightDot.x;
+    const y2 = cd.rightDot.y;
+    const dx = (x2 - x1) * 0.4;
+    const voff = (idx - (connData.length - 1) / 2) * 6;
+    const d = `M ${x1} ${y1} C ${x1 + dx} ${y1 + voff}, ${x2 - dx} ${y2 + voff}, ${x2} ${y2}`;
+    // 根据方向决定显示哪些箭头：'both'=双向, 'lr'=左→右, 'rl'=右→左
+    const dir = cd.dir || 'both';
+    const mStart = (dir === 'both' || dir === 'rl') ? 'url(#arrowStart)' : '';
+    const mEnd   = (dir === 'both' || dir === 'lr') ? 'url(#arrowEnd)' : '';
+    connSvg += `
+      <g class="conn-group" data-idx="${idx}" data-lpi="${cd.lpi}" data-lti="${cd.lti}" data-rpi="${cd.rpi}" data-rti="${cd.rti}" data-dir="${dir}">
+        <!-- glow backdrop -->
+        <path d="${d}" fill="none" stroke="${C.dotColor}" stroke-width="4.5"
+              opacity="0.08" stroke-linecap="round" class="conn-glow"/>
+        <!-- main arrow line -->
+        <path d="${d}" fill="none" stroke="url(#arrowGrad)" stroke-width="2.2"
+              marker-start="${mStart}" marker-end="${mEnd}"
+              class="conn-line" stroke-linecap="round"/>
+      </g>`;
+  });
+
+  // --- Draw one side ---
+  function drawSide(sideLabel, procs, accentColor, threadBg, threadBorder, procBorder, containerBorder) {
+    const isLeft = sideLabel === 'left';
+    const cont = isLeft ? L.leftContainer : L.rightContainer;
+    let html = '';
+
+    // Outer container
+    html += `<rect x="${cont.x}" y="${cont.y}" width="${cont.w}" height="${cont.h}" rx="12" ry="12"
+              fill="none" stroke="${containerBorder}" stroke-width="1.8" stroke-dasharray="8,4"/>`;
+    // Container label
+    const label = isLeft ? cfg.left.label : cfg.right.label;
+    html += `<text x="${cont.x + cont.w/2}" y="${cont.y - 10}" text-anchor="middle"
+              font-size="13" font-weight="700" fill="${accentColor}">${esc(label)}</text>`;
+
+    // Processes
+    procs.forEach((proc, pi) => {
+      const pb = L.getProcBox(sideLabel, pi);
+      const headH = S.processHeaderHeight;
+
+      // Process body
+      html += `<rect x="${pb.x}" y="${pb.y}" width="${pb.w}" height="${pb.h}" rx="8" ry="8"
+                fill="#fff" stroke="${procBorder}" stroke-width="2" filter="url(#boxShadow)"/>`;
+      // Process header background
+      html += `<path d="M ${pb.x+8} ${pb.y} L ${pb.x+pb.w-8} ${pb.y}
+                Q ${pb.x+pb.w} ${pb.y} ${pb.x+pb.w} ${pb.y+8}
+                L ${pb.x+pb.w} ${pb.y+headH}
+                L ${pb.x} ${pb.y+headH}
+                L ${pb.x} ${pb.y+8}
+                Q ${pb.x} ${pb.y} ${pb.x+8} ${pb.y} Z"
+                fill="${accentColor}"/>`;
+      // Process name
+      html += `<text x="${pb.x + pb.w/2}" y="${pb.y + headH/2 + 1}"
+                text-anchor="middle" dominant-baseline="central"
+                font-size="12" font-weight="700" fill="#fff">${esc(proc.name)}</text>`;
+
+      // Threads (stacked vertically) — with data attrs for cross-highlight
+      proc.threads.forEach((th, ti) => {
+        const tp = L.getThreadPos(sideLabel, pi, ti);
+        html += `<rect x="${tp.x}" y="${tp.y}" width="${tp.w}" height="${tp.h}" rx="5" ry="5"
+                  fill="${threadBg}" stroke="${threadBorder}" stroke-width="1.2"
+                  class="thread-rect" data-side="${sideLabel}" data-pi="${pi}" data-ti="${ti}"/>`;
+        html += `<text x="${tp.x + tp.w/2}" y="${tp.y + tp.h/2}"
+                  text-anchor="middle" dominant-baseline="central"
+                  font-size="11" font-weight="500" fill="${isLeft ? '#1e40af' : '#5b21b6'}"
+                  class="thread-text" data-side="${sideLabel}" data-pi="${pi}" data-ti="${ti}"
+                  style="pointer-events:none">${esc(th)}</text>`;
+      });
+    });
+    return html;
+  }
+
+  // --- Connection dots (drawn last, on top of everything) ---
+  let dotsSvg = '';
+  connData.forEach((cd, idx) => {
+    dotsSvg += `<circle cx="${cd.leftDot.x}" cy="${cd.leftDot.y}" r="6"
+                 fill="${C.dotColor}" stroke="#fff" stroke-width="2.5"
+                 class="conn-dot" data-side="left" data-ci="${idx}" data-pi="${cd.lpi}" data-ti="${cd.lti}"/>`;
+    dotsSvg += `<circle cx="${cd.rightDot.x}" cy="${cd.rightDot.y}" r="6"
+                 fill="${C.dotColor}" stroke="#fff" stroke-width="2.5"
+                 class="conn-dot" data-side="right" data-ci="${idx}" data-pi="${cd.rpi}" data-ti="${cd.rti}"/>`;
+  });
+
+  // --- Center title ---
+  const centerX = (L.leftContainer.x + L.leftContainer.w + L.rightContainer.x) / 2;
+  const legendSvg = `
+    <text x="${centerX}" y="32" text-anchor="middle" font-size="20" font-weight="800"
+          fill="#334155" letter-spacing="2">${esc(cfg.title)}</text>
+    <text x="${centerX}" y="54" text-anchor="middle" font-size="11" fill="#94a3b8">
+      Bidirectional IPC · ${cfg.left.processes.length}×${cfg.left.processes[0]?.threads.length||0} ⇄ ${cfg.right.processes.length}×${cfg.right.processes[0]?.threads.length||0}
+    </text>
+    <g transform="translate(${centerX}, 390)" opacity="0.12">
+      <text x="0" y="0" text-anchor="middle" font-size="56" font-weight="900"
+            fill="url(#arrowGrad)">⇄</text>
+    </g>`;
+
+
+  // --- Outer application frame (for Internal IPC mode) ---
+  let outerFrameSvg = '';
+  if (cfg.outerFrame) {
+    const pad = 30;
+    const ox = Math.min(L.leftContainer.x, L.rightContainer.x) - pad;
+    const oy = Math.min(L.leftContainer.y, L.rightContainer.y) - pad - 8;
+    const ow = Math.max(L.leftContainer.x + L.leftContainer.w, L.rightContainer.x + L.rightContainer.w) - ox + pad;
+    const oh = Math.max(L.leftContainer.y + L.leftContainer.h, L.rightContainer.y + L.rightContainer.h) - oy + pad;
+    const ofColor = cfg.outerFrame.color || '#10b981';
+    outerFrameSvg = `
+      <rect x="${ox}" y="${oy}" width="${ow}" height="${oh}" rx="16" ry="16"
+            fill="${ofColor}08" stroke="${ofColor}" stroke-width="2.5" stroke-dasharray="10,5"/>
+      <rect x="${ox + 6}" y="${oy + 6}" width="${ow - 12}" height="${oh - 12}" rx="12" ry="12"
+            fill="none" stroke="${ofColor}" stroke-width="0.8" stroke-dasharray="4,6" opacity="0.4"/>
+      <text x="${ox + ow/2}" y="${oy - 8}" text-anchor="middle"
+            font-size="14" font-weight="700" fill="${ofColor}">${esc(cfg.outerFrame.label)}</text>`;
+  }
+  // --- Assemble (boxes first, then arrows on top, then dots, then labels) ---
+  svg.innerHTML = defs + bg + outerFrameSvg
+    + drawSide('left',  cfg.left.processes,  C.leftAccent,  C.leftThreadBg,  C.leftThreadBorder,  C.leftProcessBorder,  C.leftContainerBorder)
+    + drawSide('right', cfg.right.processes, C.rightAccent, C.rightThreadBg, C.rightThreadBorder, C.rightProcessBorder, C.rightContainerBorder)
+    + connSvg + dotsSvg + legendSvg;
+
+  // --- Attach cross-highlight interaction system ---
+  setupInteractions(svg, connData, cfg);
+}
+
+// ==================== INTERACTION SYSTEM ====================
+/*
+ * Cross-highlight design:
+ * - Hover a thread box → highlight its own dot + its connection line(s) +
+ *   the partner thread(s) on the opposite side + partner dot(s).
+ * - Hover a connection line → highlight both connected threads + both dots.
+ * - Hover a dot → same as hovering its parent thread.
+ *
+ * Why bidirectional cross-highlighting: in a communication topology diagram,
+ * showing what a thread is connected to (and vice versa) helps the user
+ * understand the routing relationships at a glance.
+ */
+function setupInteractions(svg, connData, cfg) {
+  const tooltip = document.getElementById('tooltip');
+
+  // --- Build lookup: thread key → [connection indices] ---
+  // Key format: "left-0-2" = left side, process 0, thread 2
+  const threadToConns = {};
+  connData.forEach((cd, ci) => {
+    const lk = `left-${cd.lpi}-${cd.lti}`;
+    const rk = `right-${cd.rpi}-${cd.rti}`;
+    if (!threadToConns[lk]) threadToConns[lk] = [];
+    if (!threadToConns[rk]) threadToConns[rk] = [];
+    threadToConns[lk].push(ci);
+    threadToConns[rk].push(ci);
+  });
+
+  // --- Helper: get all elements related to a thread ---
+  function getThreadElements(side, pi, ti) {
+    const key = `${side}-${pi}-${ti}`;
+    const threadRect = svg.querySelector(`.thread-rect[data-side="${side}"][data-pi="${pi}"][data-ti="${ti}"]`);
+    const connIndices = threadToConns[key] || [];
+    const connGroups = connIndices.map(ci => svg.querySelector(`.conn-group[data-idx="${ci}"]`));
+    const connLines = connIndices.map(ci => svg.querySelector(`.conn-group[data-idx="${ci}"] .conn-line`));
+    const connGlows = connIndices.map(ci => svg.querySelector(`.conn-group[data-idx="${ci}"] .conn-glow`));
+    const ownDots = connIndices.map(ci => svg.querySelector(`.conn-dot[data-side="${side}"][data-ci="${ci}"]`));
+    // Partner threads
+    const partnerEls = [];
+    connData.forEach((cd, ci) => {
+      if (connIndices.includes(ci)) {
+        const pSide = side === 'left' ? 'right' : 'left';
+        const pPi = side === 'left' ? cd.rpi : cd.lpi;
+        const pTi = side === 'left' ? cd.rti : cd.lti;
+        const pRect = svg.querySelector(`.thread-rect[data-side="${pSide}"][data-pi="${pPi}"][data-ti="${pTi}"]`);
+        if (pRect) partnerEls.push(pRect);
+        const pDot = svg.querySelector(`.conn-dot[data-side="${pSide}"][data-ci="${ci}"]`);
+        if (pDot) partnerEls.push(pDot);
+      }
+    });
+    return { threadRect, connGroups, connLines, connGlows, ownDots, partnerEls };
+  }
+
+  // --- Helper: clear all highlights ---
+  function clearAllHighlights() {
+    svg.querySelectorAll('.highlight').forEach(el => el.classList.remove('highlight'));
+  }
+
+  // --- Helper: show tooltip ---
+  function showTooltip(e, html) {
+    tooltip.innerHTML = html;
+    tooltip.classList.add('visible');
+    tooltip.style.left = (e.clientX + 16) + 'px';
+    tooltip.style.top = (e.clientY - 10) + 'px';
+  }
+  function hideTooltip() { tooltip.classList.remove('visible'); }
+
+  // ===== THREAD RECT HOVER =====
+  svg.querySelectorAll('.thread-rect').forEach(rect => {
+    rect.addEventListener('mouseenter', (e) => {
+      clearAllHighlights();
+      const side = rect.dataset.side;
+      const pi = parseInt(rect.dataset.pi);
+      const ti = parseInt(rect.dataset.ti);
+      const els = getThreadElements(side, pi, ti);
+
+      // Highlight this thread
+      rect.classList.add('highlight');
+      // Highlight its connection lines & glows
+      els.connLines.forEach(l => l.classList.add('highlight'));
+      els.connGlows.forEach(g => g.classList.add('highlight'));
+      // Highlight its own dots
+      els.ownDots.forEach(d => d.classList.add('highlight'));
+      // Highlight partner threads & dots
+      els.partnerEls.forEach(el => el.classList.add('highlight'));
+
+      // Tooltip
+      const procName = side === 'left' ? cfg.left.processes[pi].name : cfg.right.processes[pi].name;
+      const threadName = side === 'left' ? cfg.left.processes[pi].threads[ti] : cfg.right.processes[pi].threads[ti];
+      const connCount = els.connLines.length;
+      showTooltip(e, `<strong>${esc(threadName)}</strong><br><small>${esc(procName)} · ${connCount} 条连接</small>`);
+    });
+    rect.addEventListener('mousemove', (e) => {
+      tooltip.style.left = (e.clientX + 16) + 'px';
+      tooltip.style.top = (e.clientY - 10) + 'px';
+    });
+    rect.addEventListener('mouseleave', () => {
+      clearAllHighlights();
+      hideTooltip();
+    });
+  });
+
+  // ===== CONNECTION GROUP HOVER =====
+  svg.querySelectorAll('.conn-group').forEach(group => {
+    group.addEventListener('mouseenter', (e) => {
+      clearAllHighlights();
+      const idx = parseInt(group.dataset.idx);
+      const cd = connData[idx];
+      const lpi = parseInt(group.dataset.lpi);
+      const lti = parseInt(group.dataset.lti);
+      const rpi = parseInt(group.dataset.rpi);
+      const rti = parseInt(group.dataset.rti);
+
+      // Highlight this connection
+      const line = group.querySelector('.conn-line');
+      const glow = group.querySelector('.conn-glow');
+      if (line) line.classList.add('highlight');
+      if (glow) glow.classList.add('highlight');
+
+      // Highlight both connected threads
+      const lRect = svg.querySelector(`.thread-rect[data-side="left"][data-pi="${lpi}"][data-ti="${lti}"]`);
+      const rRect = svg.querySelector(`.thread-rect[data-side="right"][data-pi="${rpi}"][data-ti="${rti}"]`);
+      if (lRect) lRect.classList.add('highlight');
+      if (rRect) rRect.classList.add('highlight');
+
+      // Highlight both dots
+      const lDot = svg.querySelector(`.conn-dot[data-side="left"][data-ci="${idx}"]`);
+      const rDot = svg.querySelector(`.conn-dot[data-side="right"][data-ci="${idx}"]`);
+      if (lDot) lDot.classList.add('highlight');
+      if (rDot) rDot.classList.add('highlight');
+
+      // Tooltip（根据方向显示不同箭头符号）
+      const lt = cfg.left.processes[cd.lpi].threads[cd.lti];
+      const rt = cfg.right.processes[cd.rpi].threads[cd.rti];
+      const dirSymbol = { both: '⇄', lr: '→', rl: '←' }[cd.dir] || '⇄';
+      showTooltip(e, `<strong>${esc(lt)}</strong> ${dirSymbol} <strong>${esc(rt)}</strong>`);
+    });
+    group.addEventListener('mousemove', (e) => {
+      tooltip.style.left = (e.clientX + 16) + 'px';
+      tooltip.style.top = (e.clientY - 10) + 'px';
+    });
+    group.addEventListener('mouseleave', () => {
+      clearAllHighlights();
+      hideTooltip();
+    });
+  });
+
+  // ===== DOT HOVER =====
+  svg.querySelectorAll('.conn-dot').forEach(dot => {
+    dot.addEventListener('mouseenter', (e) => {
+      clearAllHighlights();
+      const side = dot.dataset.side;
+      const pi = parseInt(dot.dataset.pi);
+      const ti = parseInt(dot.dataset.ti);
+      const ci = parseInt(dot.dataset.ci);
+
+      // Highlight this dot
+      dot.classList.add('highlight');
+
+      // Highlight its connection
+      const group = svg.querySelector(`.conn-group[data-idx="${ci}"]`);
+      if (group) {
+        const line = group.querySelector('.conn-line');
+        const glow = group.querySelector('.conn-glow');
+        if (line) line.classList.add('highlight');
+        if (glow) glow.classList.add('highlight');
+      }
+
+      // Highlight parent thread
+      const rect = svg.querySelector(`.thread-rect[data-side="${side}"][data-pi="${pi}"][data-ti="${ti}"]`);
+      if (rect) rect.classList.add('highlight');
+
+      // Highlight partner
+      const cd = connData[ci];
+      const pSide = side === 'left' ? 'right' : 'left';
+      const pPi = side === 'left' ? cd.rpi : cd.lpi;
+      const pTi = side === 'left' ? cd.rti : cd.lti;
+      const pRect = svg.querySelector(`.thread-rect[data-side="${pSide}"][data-pi="${pPi}"][data-ti="${pTi}"]`);
+      const pDot = svg.querySelector(`.conn-dot[data-side="${pSide}"][data-ci="${ci}"]`);
+      if (pRect) pRect.classList.add('highlight');
+      if (pDot) pDot.classList.add('highlight');
+
+      // Tooltip
+      const threadName = side === 'left' ? cfg.left.processes[pi].threads[ti] : cfg.right.processes[pi].threads[ti];
+      showTooltip(e, `<small>连接点 ·</small> <strong>${esc(threadName)}</strong>`);
+    });
+    dot.addEventListener('mousemove', (e) => {
+      tooltip.style.left = (e.clientX + 16) + 'px';
+      tooltip.style.top = (e.clientY - 10) + 'px';
+    });
+    dot.addEventListener('mouseleave', () => {
+      clearAllHighlights();
+      hideTooltip();
+    });
+  });
+}
+
+// ==================== CONFIG PANEL ====================
+function renderConfigPanel(cfg) {
+  const sidebar = document.getElementById('configSidebar');
+  const C = cfg.colors;
+  const S = cfg.spacing;
+  let h = '';
+
+  // -- Left --
+  h += `<div class="config-section left">
+    <div class="config-section-title">📦 左侧 — 服务端 (${cfg.left.processes.length}进程)</div>
+    <div class="form-group"><label class="form-label">侧标签</label>
+      <input class="form-input" data-path="left.label" value="${esc(cfg.left.label)}"></div>`;
+  cfg.left.processes.forEach((proc, pi) => {
+    h += `<div class="proc-block">
+      <div class="proc-header left"><span><span class="dot-indicator"></span>进程 ${pi+1}</span><span>
+        ${proc.threads.length>1?`<button class="btn-sm danger" data-action="removeThread" data-side="left" data-pi="${pi}">−线程</button>`:''}
+        <button class="btn-sm add" data-action="addThread" data-side="left" data-pi="${pi}">+线程</button>
+        ${cfg.left.processes.length>1?`<button class="btn-sm danger" data-action="removeProc" data-side="left" data-pi="${pi}">×</button>`:''}
+      </span></div>
+      <div class="form-group"><input class="form-input" data-path="left.processes.${pi}.name" value="${esc(proc.name)}" placeholder="进程名"></div>
+      <div class="thread-inputs">`;
+    proc.threads.forEach((th, ti) => {
+      h += `<input class="form-input" data-path="left.processes.${pi}.threads.${ti}" value="${esc(th)}" placeholder="线程${ti+1}">`;
+    });
+    h += `</div></div>`;
+  });
+  h += `<button class="btn-sm add" style="margin-top:6px" data-action="addProc" data-side="left">+ 添加进程</button></div>`;
+
+  // -- Right --
+  h += `<div class="config-section right">
+    <div class="config-section-title">📦 右侧 — 客户端 (${cfg.right.processes.length}进程)</div>
+    <div class="form-group"><label class="form-label">侧标签</label>
+      <input class="form-input" data-path="right.label" value="${esc(cfg.right.label)}"></div>`;
+  cfg.right.processes.forEach((proc, pi) => {
+    h += `<div class="proc-block">
+      <div class="proc-header right"><span><span class="dot-indicator"></span>进程 ${pi+1}</span><span>
+        ${proc.threads.length>1?`<button class="btn-sm danger" data-action="removeThread" data-side="right" data-pi="${pi}">−线程</button>`:''}
+        <button class="btn-sm add" data-action="addThread" data-side="right" data-pi="${pi}">+线程</button>
+        ${cfg.right.processes.length>1?`<button class="btn-sm danger" data-action="removeProc" data-side="right" data-pi="${pi}">×</button>`:''}
+      </span></div>
+      <div class="form-group"><input class="form-input" data-path="right.processes.${pi}.name" value="${esc(proc.name)}" placeholder="进程名"></div>
+      <div class="thread-inputs">`;
+    proc.threads.forEach((th, ti) => {
+      h += `<input class="form-input" data-path="right.processes.${pi}.threads.${ti}" value="${esc(th)}" placeholder="线程${ti+1}">`;
+    });
+    h += `</div></div>`;
+  });
+  h += `<button class="btn-sm add" style="margin-top:6px" data-action="addProc" data-side="right">+ 添加进程</button></div>`;
+
+  // -- Connections --
+  const leftFlat = []; cfg.left.processes.forEach((p,pi)=>p.threads.forEach((t,ti)=>leftFlat.push({pi,ti,label:t,key:`${pi}.${ti}`})));
+  const rightFlat = []; cfg.right.processes.forEach((p,pi)=>p.threads.forEach((t,ti)=>rightFlat.push({pi,ti,label:t,key:`${pi}.${ti}`})));
+  h += `<div class="config-section conns">
+    <div class="config-section-title">🔗 连接映射 (${cfg.connections.length}条)</div>
+    <table class="conn-table"><thead><tr><th>#</th><th>左侧线程</th><th>方向</th><th>右侧线程</th></tr></thead><tbody>`;
+  /*
+   * 方向列：每个连接可独立选择双向/单向。
+   * data-dir 存储当前值，change 时更新 config.connections[ci][4]。
+   */
+  const dirOpts = [
+    ['both','⇄ 双向'],
+    ['lr',  '→ 左→右'],
+    ['rl',  '← 右→左']
+  ];
+  cfg.connections.forEach((c, ci) => {
+    const lpi=c[0], lti=c[1], rpi=c[2], rti=c[3], dir=c[4]||'both';
+    h += `<tr><td>${ci+1}</td><td><select data-action="connLeft" data-ci="${ci}">`;
+    leftFlat.forEach(lt=>{const sel=lt.pi===lpi&&lt.ti===lti?' selected':'';h+=`<option value="${lt.pi},${lt.ti}"${sel}>${esc(lt.label)} [${lt.key}]</option>`;});
+    h += `</select></td>
+      <td><select data-action="connDir" data-ci="${ci}" class="dir-select">`;
+    dirOpts.forEach(([v,label])=>{const sel=v===dir?' selected':'';h+=`<option value="${v}"${sel}>${label}</option>`;});
+    h += `</select></td>
+      <td><select data-action="connRight" data-ci="${ci}">`;
+    rightFlat.forEach(rt=>{const sel=rt.pi===rpi&&rt.ti===rti?' selected':'';h+=`<option value="${rt.pi},${rt.ti}"${sel}>${esc(rt.label)} [${rt.key}]</option>`;});
+    h += `</select></td></tr>`;
+  });
+  h += `</tbody></table>
+    <div style="display:flex;gap:6px;margin-top:8px">
+      <button class="btn-sm add" data-action="addConn">+ 连接</button>
+      ${cfg.connections.length>1?'<button class="btn-sm danger" data-action="removeConn">− 连接</button>':''}
+    </div></div>`;
+
+  // -- Spacing --
+  h += `<div class="config-section layout"><div class="config-section-title">📐 间距与尺寸</div>`;
+  h += rangeRow('进程宽度', 'spacing.processWidth', S.processWidth, 140, 320);
+  h += rangeRow('两侧间距', 'spacing.sideGap', S.sideGap, 120, 550);
+  h += rangeRow('线程盒高度', 'spacing.threadHeight', S.threadHeight, 28, 72);
+  h += rangeRow('线程垂直间距', 'spacing.threadGap', S.threadGap, 2, 24);
+  h += rangeRow('进程垂直间距', 'spacing.processGap', S.processGap, 4, 50);
+  h += rangeRow('进程头部高度', 'spacing.processHeaderHeight', S.processHeaderHeight, 20, 48);
+  h += rangeRow('容器水平内边距', 'spacing.containerPadX', S.containerPadX, 8, 50);
+  h += rangeRow('容器垂直内边距', 'spacing.containerPadY', S.containerPadY, 8, 60);
+  h += rangeRow('进程水平内边距', 'spacing.processPadX', S.processPadX, 4, 36);
+  h += `</div>`;
+
+  // -- Colors --
+  h += `<div class="config-section layout"><div class="config-section-title">🎨 颜色</div>`;
+  h += cRow('左侧主题色','colors.leftAccent',C.leftAccent);
+  h += cRow('左线程背景','colors.leftThreadBg',C.leftThreadBg);
+  h += cRow('左线程边框','colors.leftThreadBorder',C.leftThreadBorder);
+  h += cRow('左进程边框','colors.leftProcessBorder',C.leftProcessBorder);
+  h += cRow('右侧主题色','colors.rightAccent',C.rightAccent);
+  h += cRow('右线程背景','colors.rightThreadBg',C.rightThreadBg);
+  h += cRow('右线程边框','colors.rightThreadBorder',C.rightThreadBorder);
+  h += cRow('右进程边框','colors.rightProcessBorder',C.rightProcessBorder);
+  h += cRow('连接点颜色','colors.dotColor',C.dotColor);
+  h += cRow('箭头颜色','colors.arrowColor',C.arrowColor);
+  h += `</div>`;
+
+  // -- Title --
+  h += `<div class="config-section layout"><div class="config-section-title">📝 标题</div>
+    <div class="form-group"><input class="form-input" data-path="title" value="${esc(cfg.title)}"></div></div>`;
+
+  sidebar.innerHTML = h;
+
+  // --- Events ---
+  sidebar.querySelectorAll('input[data-path]').forEach(inp => {
+    inp.addEventListener('input', () => { setByPath(cfg, inp.dataset.path, inp.value); renderDiagram(cfg); saveConfig(); });
+  });
+  sidebar.querySelectorAll('input[type="range"]').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const val = parseInt(inp.value);
+      setByPath(cfg, inp.dataset.path, val);
+      const d = inp.parentElement.querySelector('.range-val');
+      if (d) d.textContent = val;
+      renderDiagram(cfg); saveConfig();
+    });
+  });
+  sidebar.querySelectorAll('input[type="color"]').forEach(inp => {
+    inp.addEventListener('input', () => { setByPath(cfg, inp.dataset.path, inp.value); renderDiagram(cfg); saveConfig(); });
+  });
+  sidebar.querySelectorAll('button[data-action]').forEach(btn => {
+    btn.addEventListener('click', () => handleAction(btn.dataset));
+  });
+  sidebar.querySelectorAll('select[data-action="connLeft"]').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const ci = parseInt(sel.dataset.ci);
+      const [pi,ti] = sel.value.split(',').map(Number);
+      cfg.connections[ci][0]=pi; cfg.connections[ci][1]=ti;
+      renderAll();
+    });
+  });
+  sidebar.querySelectorAll('select[data-action="connRight"]').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const ci = parseInt(sel.dataset.ci);
+      const [pi,ti] = sel.value.split(',').map(Number);
+      cfg.connections[ci][2]=pi; cfg.connections[ci][3]=ti;
+      renderAll();
+    });
+  });
+  // 方向切换
+  sidebar.querySelectorAll('select[data-action="connDir"]').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const ci = parseInt(sel.dataset.ci);
+      cfg.connections[ci][4] = sel.value;
+      renderAll();
+    });
+  });
+}
+
+function rangeRow(label, path, value, min, max) {
+  return `<div class="form-group"><label class="form-label">${label}</label><div class="range-row">
+    <input type="range" min="${min}" max="${max}" value="${value}" data-path="${path}">
+    <span class="range-val">${value}</span></div></div>`;
+}
+function cRow(label, path, value) {
+  return `<div class="form-row" style="margin-bottom:5px"><label class="form-label" style="flex:1;margin-bottom:0">${label}</label>
+    <input type="color" value="${value}" data-path="${path}" style="width:38px;height:24px"></div>`;
+}
+
+// ==================== ACTIONS ====================
+function handleAction(ds) {
+  const side = ds.side, pi = parseInt(ds.pi);
+  const procs = side === 'left' ? config.left.processes : config.right.processes;
+
+  switch (ds.action) {
+    case 'addProc': {
+      const n = procs[0] ? procs[0].threads.length : 2;
+      procs.push({ name: `Process ${procs.length+1}`, threads: Array.from({length:n},(_,i)=>`Thread ${procs.length+1}-${i+1}`) });
+      autoConnect(); break;
+    }
+    case 'removeProc': {
+      if (procs.length <= 1) return;
+      procs.splice(pi, 1);
+      config.connections = config.connections.filter(([lpi,,rpi,]) => side==='left' ? lpi!==pi : rpi!==pi);
+      if (side==='left') config.connections = config.connections.map(c => { const a=[...c]; if (a[0]>pi) a[0]--; return a; });
+      else config.connections = config.connections.map(c => { const a=[...c]; if (a[2]>pi) a[2]--; return a; });
+      autoConnect(); break;
+    }
+    case 'addThread': {
+      procs[pi].threads.push(`Thread ${pi+1}-${procs[pi].threads.length+1}`);
+      autoConnect(); break;
+    }
+    case 'removeThread': {
+      if (procs[pi].threads.length <= 1) return;
+      procs[pi].threads.pop();
+      config.connections = config.connections.filter(c => side==='left' ? !(c[0]===pi && c[1]>=procs[pi].threads.length) : !(c[2]===pi && c[3]>=procs[pi].threads.length));
+      autoConnect(); break;
+    }
+    case 'addConn': {
+      // 追加一条新连接（默认双向，两端首个线程），而非重建全部
+      config.connections.push([0, 0, 0, 0, 'both']);
+      break;
+    }
+    case 'removeConn': if (config.connections.length>1) config.connections.pop(); break;
+  }
+  renderAll();
+}
+
+function autoConnect() {
+  const lf=[]; config.left.processes.forEach((p,pi)=>p.threads.forEach((t,ti)=>lf.push({pi,ti})));
+  const rf=[]; config.right.processes.forEach((p,pi)=>p.threads.forEach((t,ti)=>rf.push({pi,ti})));
+  const max=Math.min(lf.length, rf.length);
+  config.connections = [];
+  for (let i=0; i<max; i++) {
+    const ri = i % rf.length;
+    config.connections.push([lf[i].pi, lf[i].ti, rf[ri].pi, rf[ri].ti, 'both']);
+  }
+}
+
+// ==================== UTILS ====================
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function setByPath(obj, path, value) {
+  const parts = path.split('.');
+  let cur = obj;
+  for (let i=0; i<parts.length-1; i++) { const k=parts[i]; cur=/^\d+$/.test(k)?cur[parseInt(k)]:cur[k]; }
+  const last=parts[parts.length-1];
+  if (/^\d+$/.test(last)) cur[parseInt(last)]=value; else cur[last]=value;
+}
+function renderAll(){renderDiagram(config);renderConfigPanel(config);saveConfig()}
+function resetConfig(){switchMode(currentMode)}
+
+// ==================== SIDEBAR TOGGLE ====================
+/*
+ * 侧边栏可折叠以最大化图表可视区域。
+ * 状态保存在 localStorage，刷新后保持。
+ */
+function toggleSidebar() {
+  const sidebar = document.getElementById('configSidebar');
+  const btn = document.getElementById('btnToggleSidebar');
+  const collapsed = sidebar.classList.toggle('collapsed');
+  btn.innerHTML = collapsed ? '▶ 配置' : '◀ 配置';
+  btn.title = collapsed ? '展开配置面板' : '收起配置面板';
+  localStorage.setItem('comm:sidebarCollapsed', collapsed ? '1' : '0');
+}
+
+// ==================== CONFIG PERSISTENCE ====================
+/*
+ * 所有配置（进程名、线程名、连接映射、颜色、间距、当前模式）
+ * 自动保存到 localStorage，页面刷新后恢复。
+ *
+ * 为什么用 localStorage 而非 sessionStorage：
+ * 用户调整的配置属于"工作成果"，跨会话保留更合理。
+ * "重置"按钮可随时回到当前模式的出厂预设。
+ */
+const STORAGE_KEY = 'comm:config';
+const STORAGE_MODE_KEY = 'comm:mode';
+
+function saveConfig() {
+  try {
+    const data = {
+      config: config,
+      mode: currentMode,
+      savedAt: new Date().toISOString()
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch (e) { /* quota exceeded, ignore */ }
+}
+
+function loadConfig() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return false;
+    const data = JSON.parse(raw);
+    if (!data.config || !data.config.left || !data.config.right) return false;
+
+    // 恢复配置
+    config = data.config;
+    currentMode = data.mode || 'mode1';
+
+    // 恢复模式按钮激活态
+    document.querySelectorAll('.mode-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.mode === currentMode);
+    });
+
+    // 恢复副标题
+    const preset = MODE_PRESETS[currentMode];
+    if (preset) {
+      document.getElementById('headerSubtitle').textContent =
+        preset.description + ' · Bidirectional IPC';
+    }
+
+    return true;
+  } catch (e) { return false; }
+}
+function exportConfig(){
+  const blob=new Blob([JSON.stringify(config,null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='comm-diagram-config.json';a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// ==================== INIT ====================
+function init() {
+  // 绑定模式切换按钮
+  document.querySelectorAll('.mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => switchMode(btn.dataset.mode));
+  });
+
+  // ===== 框图独立缩放（Ctrl+滚轮 / Ctrl+Plus/Minus） =====
+  /*
+   * 仅缩放通信框图区域，标题栏和配置栏保持不变。
+   *
+   * 为什么不用浏览器原生缩放：原生缩放作用于整个页面，
+   * 导致标题栏和配置栏也跟着缩放，浪费屏幕空间。
+   * 独立缩放仅对 SVG 施加 CSS transform:scale()，
+   * 放大后 .diagram-area 的 overflow:auto 自动产生滚动条用于平移。
+   */
+  const diagramArea = document.getElementById('diagramArea');
+  const svg = document.getElementById('diagramSvg');
+  const zoomIndicator = document.getElementById('zoomIndicator');
+  let zoomLevel = 1.0;
+  const ZOOM_MIN = 0.3, ZOOM_MAX = 3.0, ZOOM_STEP = 0.08;
+  let zoomTimer = null;
+
+  function applyZoom() {
+    const pct = zoomLevel * 100; svg.style.width = pct + '%'; svg.style.height = pct + '%';
+    zoomIndicator.textContent = Math.round(pct) + '%';
+    zoomIndicator.classList.add('visible');
+    clearTimeout(zoomTimer);
+    zoomTimer = setTimeout(() => zoomIndicator.classList.remove('visible'), 1200);
+  }
+
+  // Ctrl+滚轮 → 仅缩放框图
+  document.addEventListener('wheel', function(e) {
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    if (!diagramArea.contains(e.target)) return;
+    const delta = -Math.sign(e.deltaY) * ZOOM_STEP;
+    zoomLevel = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoomLevel + delta));
+    applyZoom();
+  }, { passive: false });
+
+  // Ctrl+Plus/Minus/0 → 仅缩放框图
+  document.addEventListener('keydown', function(e) {
+    if (!e.ctrlKey) return;
+    if (e.key === '+' || e.key === '=') {
+      e.preventDefault();
+      zoomLevel = Math.min(ZOOM_MAX, zoomLevel + ZOOM_STEP);
+      applyZoom();
+    } else if (e.key === '-') {
+      e.preventDefault();
+      zoomLevel = Math.max(ZOOM_MIN, zoomLevel - ZOOM_STEP);
+      applyZoom();
+    } else if (e.key === '0') {
+      e.preventDefault();
+      zoomLevel = 1.0;
+      applyZoom();
+    }
+  });
+
+  // 双击框图区空白处 → 重置缩放
+  diagramArea.addEventListener('dblclick', function(e) {
+    if (e.target === svg || svg.contains(e.target) || e.target === diagramArea) {
+      zoomLevel = 1.0;
+      applyZoom();
+    }
+  });
+
+  // 恢复侧边栏折叠状态
+  const savedCollapsed = localStorage.getItem('comm:sidebarCollapsed');
+  if (savedCollapsed === '1') {
+    document.getElementById('configSidebar').classList.add('collapsed');
+    const btn = document.getElementById('btnToggleSidebar');
+    btn.innerHTML = '▶ 配置';
+    btn.title = '展开配置面板';
+  }
+
+  // 尝试恢复上次保存的配置，失败则用默认模式1
+  const restored = loadConfig();
+  if (restored) {
+    renderAll();
+  } else {
+    switchMode('mode1');
+  }
+}
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
